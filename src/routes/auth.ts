@@ -9,7 +9,13 @@ const SECRET_KEY = process.env.JWT_SECRET || "supersecret";
 // 회원가입 API
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body;
+    const { email, password, name } = req.body;
+
+    // 필수 필드 검증
+    if (!email || !password || !name) {
+      res.status(400).json({ message: "필수 입력 요소가 없습니다." });
+      return;
+    }
 
     // 이메일 중복 확인
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -26,6 +32,14 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
       data: {
         email,
         password: hashedPassword,
+        name: name,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        profileImage: true,
+        createdAt: true,
       },
     });
 

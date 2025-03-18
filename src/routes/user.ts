@@ -122,4 +122,52 @@ router.delete(
   }
 );
 
+// 보호된 API: 프로필 수정
+router.put(
+  "/update-profile",
+  authenticateToken,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.id;
+      const { name, profileImage } = req.body;
+
+      if (!userId) {
+        res.status(401).json({ message: "인증이 필요합니다." });
+        return;
+      }
+
+      if (!name && !profileImage) {
+        res.status(400).json({ message: "수정할 정보를 입력하세요." });
+        return;
+      }
+
+      // 1️. 변경할 데이터 생성
+      const updateData: Record<string, string> = {};
+      if (name) updateData.name = name;
+      if (profileImage) updateData.profileImage = profileImage;
+
+      // 2️. 사용자 정보 업데이트
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          profileImage: true,
+          createdAt: true,
+        },
+      });
+
+      res.status(200).json({
+        message: "프로필이 성공적으로 수정되었습니다.",
+        user: updatedUser,
+      });
+    } catch (error) {
+      console.error("프로필 수정 오류:", error);
+      res.status(500).json({ message: "서버 오류 발생" });
+    }
+  }
+);
+
 export default router;
