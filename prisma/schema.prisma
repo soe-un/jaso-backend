@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"  // 사용할 DB 종류 (MySQL이면 "mysql"로 변경)
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -12,4 +12,16 @@ model User {
   email     String  @unique
   password  String
   createdAt DateTime @default(now())
+
+  posts Post[] @relation("UserPosts")
+}
+
+model Post {
+  id        String  @id @default(uuid())
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+
+  author    User @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  String
 }
