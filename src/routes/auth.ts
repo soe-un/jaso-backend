@@ -77,6 +77,15 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     res.status(401).json({ message: "이메일 또는 비밀번호가 틀렸습니다." });
     return;
   }
+
+  // 소셜 유저 확인
+  if (!user.provider && !user.password) {
+    res
+      .status(403)
+      .json({ message: "소셜 로그인 유저입니다. 비밀번호 로그인 불가" });
+    return;
+  }
+
   // 이메일 인증 확인
   if (!user.isVerified) {
     res.status(403).json({ message: "이메일 인증이 필요합니다." });
@@ -259,6 +268,7 @@ router.post("/reset-password/:token", async (req: Request, res: Response) => {
   }
 });
 
+// 카카오 연동
 router.get("/kakao/callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;
 
@@ -350,6 +360,128 @@ router.get("/kakao/callback", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("카카오 로그인 실패", err);
     res.status(500).json({ message: "카카오 로그인 실패" });
+  }
+});
+
+// 구글 연동
+router.get("/google", (req: Request, res: Response) => {
+  const redirectUri = "https://accounts.google.com/o/oauth2/v2/auth";
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID!,
+    redirect_uri: process.env.GOOGLE_REDIRECT_URI!,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "consent",
+  });
+
+  res.redirect(`${redirectUri}?${params.toString()}`);
+});
+
+// 구글 연동
+router.get("/google/callback", async (req: Request, res: Response) => {
+  const code = req.query.code as string;
+
+  try {
+    // 1. 구글 토큰 요청
+    const tokenRes = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      null,
+      {
+        params: {
+          code,
+          client_id: process.env.GOOGLE_CLIENT_ID,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET,
+          redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+          grant_type: "authorization_code",
+        },
+      }
+    );
+
+    const { access_token, id_token } = tokenRes.data;
+
+    // 2. 유저 정보 요청 (id_token이 포함된 경우 여기서 decode 가능)
+    const userRes = await axios.get(
+      "https://www.googleapis.com/oauth2/v2/userinfo",
+      {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+        },
+      }
+    );
+
+    const googleUser = userRes.data;
+
+    config.mode.dev ??
+      console.log(
+        "✅ 구글 사용자 정보 응답:",
+        JSON.stringify(googleUser.email, null, 2)
+      );
+
+    const googleId = googleUser.id;
+    const email = googleUser.email;
+    const name = googleUser.name;
+    const profileImage = googleUser.picture;
+
+    const existingEmailUser = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (existingEmailUser && !existingEmailUser.provider) {
+      res.status(400).json({
+        message:
+          "이미 일반 회원으로 가입된 이메일입니다. 이메일 로그인으로 이용해주세요.",
+      });
+      return;
+    }
+
+    // 3. 기존 유저 확인 (socialId + provider 기준)
+    let user = await prisma.user.findFirst({
+      where: {
+        provider: "google",
+        socialId: googleId,
+      },
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: email ?? `google_${googleId}@noemail.com`,
+          name,
+          profileImage,
+          provider: "google",
+          socialId: googleId,
+          isVerified: true,
+          password: "google_dummy", // 소셜 유저는 비번 없음
+        },
+      });
+    }
+
+    // 4. Access + Refresh Token 발급
+    const accessToken = generateAccessToken(user.id);
+    const refreshToken = generateRefreshToken();
+    const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    // 5. 리디렉션 + 쿠키
+    res
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        maxAge: config.refreshToken.expiresInMs,
+      })
+      .redirect(`${config.server.url}/auth/success?token=${accessToken}`);
+  } catch (err) {
+    console.error("🔥 구글 로그인 실패", err);
+    res.status(500).json({ message: "구글 로그인 실패" });
   }
 });
 

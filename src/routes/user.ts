@@ -112,6 +112,11 @@ router.delete(
       }
 
       // 2️⃣ 사용자 삭제 (관련 데이터도 삭제 필요!)
+
+      await prisma.refreshToken.deleteMany({
+        where: { userId },
+      });
+
       await prisma.user.delete({ where: { id: userId } });
 
       res.status(200).json({ message: "회원 탈퇴가 완료되었습니다." });
