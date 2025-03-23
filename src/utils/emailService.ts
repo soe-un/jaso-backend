@@ -21,3 +21,18 @@ export const sendVerificationEmail = async (email: string, token: string) => {
 
   await transporter.sendMail(mailOptions);
 };
+
+export const sendResetPasswordEmail = async (email: string, token: string) => {
+  const resetLink = `${process.env.SERVER_URL}/auth/reset-password/${token}`;
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: "비밀번호 재설정 링크입니다",
+    html: `<p>비밀번호를 재설정하려면 아래 링크를 클릭하세요:</p>
+             <a href="${resetLink}">${resetLink}</a><br />
+             <small>이 링크는 1시간 동안만 유효합니다.</small>`,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
