@@ -20,8 +20,8 @@ export const authenticateToken = (
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
   try {
-    const decoded = jwt.verify(token, config.jwt.secret) as { userId: string };
-    req.user = { id: decoded.userId }; // 요청 객체에 사용자 정보 추가
+    const decoded = jwt.verify(token, config.jwt.secret) as { sub: string };
+    req.user = { id: decoded.sub }; // 요청 객체에 사용자 정보 추가
     next();
   } catch (error) {
     res.status(403).json({ message: "유효하지 않은 토큰입니다." });

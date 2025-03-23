@@ -14,7 +14,7 @@ export const config = {
     port: process.env.PORT || 5000,
     env: process.env.NODE_ENV || "development",
     dev: true,
-    url: process.env.SERVER_URL || "http://localhost:5000",
+    url: process.env.SERVER_URL || "http://localhost:3000",
   },
   mode: {
     dev: true,

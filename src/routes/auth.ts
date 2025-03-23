@@ -353,8 +353,6 @@ router.get("/kakao/callback", async (req: Request, res: Response) => {
     const accessTokenJwt = generateAccessToken(user.id);
     const refreshToken = generateRefreshToken(user.id);
 
-    const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
-
     // 6. 쿠키로 Refresh Token 설정
     res
       .cookie("refreshToken", refreshToken, {
