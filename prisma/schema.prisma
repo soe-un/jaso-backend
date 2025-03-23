@@ -14,6 +14,8 @@ model User {
   name                 String?
   profileImage         String?
   isVerified           Boolean        @default(false)
+  provider   String?  // ex. "kakao", "google"
+  socialId   String?  // 카카오 ID 또는 구글 sub
   emailVerifyToken     String?
   resetPasswordToken   String?
   resetPasswordExpires DateTime?

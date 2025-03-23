@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import prisma from "../prisma";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import axios from "axios";
 import {
   sendResetPasswordEmail,
   sendVerificationEmail,
@@ -256,6 +256,100 @@ router.post("/reset-password/:token", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("비밀번호 재설정 오류:", error);
     res.status(500).json({ message: "서버 오류 발생" });
+  }
+});
+
+router.get("/kakao/callback", async (req: Request, res: Response) => {
+  const code = req.query.code as string;
+
+  try {
+    // 1. 인가 코드로 카카오 토큰 요청
+    const tokenRes = await axios.post(
+      "https://kauth.kakao.com/oauth/token",
+      null,
+      {
+        params: {
+          grant_type: "authorization_code",
+          client_id: process.env.KAKAO_CLIENT_ID,
+          redirect_uri: process.env.KAKAO_REDIRECT_URI,
+          code,
+        },
+        headers: {
+          "Content-type": "application/x-www-form-urlencoded;charset=utf-8",
+        },
+      }
+    );
+
+    const accessToken = tokenRes.data.access_token;
+
+    // 2. 사용자 정보 조회
+    const userRes = await axios.get("https://kapi.kakao.com/v2/user/me", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const kakaoUser = userRes.data;
+
+    config.mode.dev ??
+      console.log(
+        "✅ 카카오 사용자 정보 응답:",
+        JSON.stringify(kakaoUser, null, 2)
+      );
+
+    const kakaoId = String(kakaoUser.id); // 카카오 고유 ID
+    const nickname = kakaoUser.properties?.nickname || "카카오유저";
+    const kakaoEmail = kakaoUser.kakao_account?.email;
+    const profileImage = kakaoUser.properties?.profile_image || null;
+
+    let user = await prisma.user.findFirst({
+      where: {
+        // 이메일 없을 경우 ID 기반으로 처리
+        socialId: kakaoId,
+        provider: "kakao",
+      },
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: kakaoEmail ?? `kakao_${kakaoId}@noemail.com`, // 가짜 이메일 생성
+          name: nickname,
+          profileImage,
+          isVerified: true,
+          password: "kakao_dummy_password",
+          provider: "kakao",
+          socialId: kakaoId,
+        },
+      });
+    }
+
+    // 5. Access + Refresh 발급
+    const accessTokenJwt = generateAccessToken(user.id);
+    const refreshToken = generateRefreshToken();
+
+    const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    // 6. 쿠키로 Refresh Token 설정
+    res
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: config.mode.dev ? false : true,
+        sameSite: "strict",
+        maxAge: config.refreshToken.expiresInMs,
+      })
+      .redirect(`${config.server.url}/auth/success?token=${accessTokenJwt}`);
+  } catch (err) {
+    console.error("카카오 로그인 실패", err);
+    res.status(500).json({ message: "카카오 로그인 실패" });
   }
 });
 
