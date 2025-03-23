@@ -8,26 +8,36 @@ datasource db {
 }
 
 model User {
-  id        String  @id @default(uuid())
-  email     String  @unique
-  password  String
-  name      String?
-  profileImage String?
-  isVerified  Boolean @default(false) 
-  emailVerifyToken String?
-  resetPasswordToken    String?
-  resetPasswordExpires  DateTime?
-  createdAt DateTime @default(now())
+  id                   String         @id @default(uuid())
+  email                String         @unique
+  password             String
+  name                 String?
+  profileImage         String?
+  isVerified           Boolean        @default(false)
+  emailVerifyToken     String?
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  refreshTokens        RefreshToken[]
+  createdAt            DateTime       @default(now())
 
   posts Post[] @relation("UserPosts")
 }
 
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
 model Post {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   title     String
   content   String
   createdAt DateTime @default(now())
 
-  author    User @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
-  authorId  String
+  author   User   @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
 }

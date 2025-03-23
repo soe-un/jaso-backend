@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-
-const SECRET_KEY = process.env.JWT_SECRET || "supersecret";
+import { config } from "../config";
 
 export interface AuthRequest extends Request {
   user?: { id: string };
@@ -21,7 +20,7 @@ export const authenticateToken = (
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
   try {
-    const decoded = jwt.verify(token, SECRET_KEY) as { userId: string };
+    const decoded = jwt.verify(token, config.jwt.secret) as { userId: string };
     req.user = { id: decoded.userId }; // 요청 객체에 사용자 정보 추가
     next();
   } catch (error) {

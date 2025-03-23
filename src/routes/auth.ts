@@ -7,9 +7,10 @@ import {
   sendVerificationEmail,
 } from "../utils/emailService";
 import { randomBytes } from "crypto";
+import { generateAccessToken, generateRefreshToken } from "../utils/token";
+import { config } from "../config";
 
 const router = express.Router();
-const SECRET_KEY = process.env.JWT_SECRET || "supersecret";
 
 // 회원가입 API
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
@@ -67,44 +68,84 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
 
 // 로그인 API
 router.post("/login", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    // 사용자가 DB에 존재하는지 확인
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      res
-        .status(401)
-        .json({ message: "이메일 또는 비밀번호가 잘못되었습니다." });
-      return;
-    }
+  // 사용자가 DB에 존재하는지 확인
+  const user = await prisma.user.findUnique({ where: { email } });
 
-    // 비밀번호 비교
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      res
-        .status(401)
-        .json({ message: "이메일 또는 비밀번호가 잘못되었습니다." });
-      return;
-    }
-
-    // 이메일 인증 확인
-    if (!user.isVerified) {
-      res.status(403).json({ message: "이메일 인증이 완료되지 않았습니다." });
-      return;
-    }
-
-    // JWT 토큰 생성
-    const token = jwt.sign({ userId: user.id }, SECRET_KEY, {
-      expiresIn: "1h",
-    });
-
-    // 로그인 성공 응답
-    res.status(200).json({ message: "로그인 성공!", token, user });
-  } catch (error) {
-    console.error("로그인 오류:", error);
-    res.status(500).json({ message: "서버 오류 발생" });
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    res.status(401).json({ message: "이메일 또는 비밀번호가 틀렸습니다." });
+    return;
   }
+  // 이메일 인증 확인
+  if (!user.isVerified) {
+    res.status(403).json({ message: "이메일 인증이 필요합니다." });
+    return;
+  }
+
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = generateRefreshToken();
+  const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
+
+  await prisma.refreshToken.create({
+    data: {
+      token: refreshToken,
+      userId: user.id,
+      expiresAt,
+    },
+  });
+
+  res
+    .cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: config.mode.dev ? false : true, // true: HTTPS에서만 동작
+      sameSite: "strict",
+      maxAge: config.refreshToken.expiresInMs,
+    })
+    .json({
+      message: "로그인 성공!",
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        profileImage: user.profileImage,
+      },
+    });
+});
+
+// 토큰 refresh API
+router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
+  const refreshToken = req.cookies?.refreshToken;
+
+  if (!refreshToken) {
+    res.status(401).json({ message: "Refresh Token이 없습니다." });
+    return;
+  }
+
+  const savedToken = await prisma.refreshToken.findUnique({
+    where: { token: refreshToken },
+    include: { user: true },
+  });
+
+  if (!savedToken || savedToken.expiresAt < new Date()) {
+    res.status(403).json({ message: "Refresh Token이 유효하지 않습니다." });
+    return;
+  }
+
+  const newAccessToken = generateAccessToken(savedToken.user.id);
+  res.status(200).json({ accessToken: newAccessToken });
+});
+
+// 로그아웃 API
+router.post("/logout", async (req: Request, res: Response): Promise<void> => {
+  const refreshToken = req.cookies?.refreshToken;
+
+  if (refreshToken) {
+    await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+  }
+
+  res.clearCookie("refreshToken").json({ message: "로그아웃 되었습니다." });
 });
 
 // 이메일 인증 확인 API
