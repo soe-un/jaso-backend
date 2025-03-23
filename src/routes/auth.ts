@@ -9,6 +9,7 @@ import {
 import { randomBytes } from "crypto";
 import { generateAccessToken, generateRefreshToken } from "../utils/token";
 import { config } from "../config";
+import jwt, { JwtPayload } from "jsonwebtoken";
 
 const router = express.Router();
 
@@ -93,16 +94,8 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
   }
 
   const accessToken = generateAccessToken(user.id);
-  const refreshToken = generateRefreshToken();
+  const refreshToken = generateRefreshToken(user.id);
   const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
-
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: user.id,
-      expiresAt,
-    },
-  });
 
   res
     .cookie("refreshToken", refreshToken, {
@@ -125,36 +118,58 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
 
 // 토큰 refresh API
 router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
-  const refreshToken = req.cookies?.refreshToken;
+  const refreshToken = req.cookies["refreshToken"];
 
   if (!refreshToken) {
-    res.status(401).json({ message: "Refresh Token이 없습니다." });
+    res.status(401).json({ message: "Refresh token missing" });
     return;
   }
 
-  const savedToken = await prisma.refreshToken.findUnique({
-    where: { token: refreshToken },
-    include: { user: true },
-  });
+  try {
+    const decoded = jwt.verify(
+      refreshToken,
+      config.jwt.refreshSecret!
+    ) as JwtPayload;
 
-  if (!savedToken || savedToken.expiresAt < new Date()) {
-    res.status(403).json({ message: "Refresh Token이 유효하지 않습니다." });
+    if (!decoded.sub) throw new Error("Invalid token: no subject");
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.sub as string },
+    });
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    // ✅ 새 accessToken 생성
+    const accessToken = jwt.sign({ sub: user.id }, config.jwt.secret!, {
+      expiresIn: config.jwt.expiresIn,
+    });
+
+    // ✅ 응답 body로 accessToken과 user 함께 보내기
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        profileImage: user.profileImage,
+      },
+      accessToken,
+    });
+    return;
+  } catch (err) {
+    console.error("refresh error:", err);
+    res.status(403).json({ message: "Invalid refresh token" });
     return;
   }
-
-  const newAccessToken = generateAccessToken(savedToken.user.id);
-  res.status(200).json({ accessToken: newAccessToken });
 });
 
 // 로그아웃 API
 router.post("/logout", async (req: Request, res: Response): Promise<void> => {
-  const refreshToken = req.cookies?.refreshToken;
-
-  if (refreshToken) {
-    await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
-  }
-
-  res.clearCookie("refreshToken").json({ message: "로그아웃 되었습니다." });
+  res.clearCookie("refreshToken", { path: "/" });
+  res.json({ message: "로그아웃 완료" });
+  return;
 });
 
 // 이메일 인증 확인 API
@@ -336,17 +351,9 @@ router.get("/kakao/callback", async (req: Request, res: Response) => {
 
     // 5. Access + Refresh 발급
     const accessTokenJwt = generateAccessToken(user.id);
-    const refreshToken = generateRefreshToken();
+    const refreshToken = generateRefreshToken(user.id);
 
     const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
-
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt,
-      },
-    });
 
     // 6. 쿠키로 Refresh Token 설정
     res
@@ -459,16 +466,7 @@ router.get("/google/callback", async (req: Request, res: Response) => {
 
     // 4. Access + Refresh Token 발급
     const accessToken = generateAccessToken(user.id);
-    const refreshToken = generateRefreshToken();
-    const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
-
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt,
-      },
-    });
+    const refreshToken = generateRefreshToken(user.id);
 
     // 5. 리디렉션 + 쿠키
     res

@@ -2,7 +2,9 @@ import { SignOptions } from "jsonwebtoken";
 
 export const config = {
   jwt: {
-    secret: process.env.JWT_SECRET || "default-jwt-secret",
+    secret: process.env.JWT_SECRET || "textsecretevalye",
+    refreshSecret: process.env.JWT_SECRET || "textsecretevalye",
+    refreshExpiresIn: "7d" as SignOptions["expiresIn"],
     expiresIn: "15m" as SignOptions["expiresIn"],
   },
   refreshToken: {

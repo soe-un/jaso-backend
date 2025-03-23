@@ -1,9 +1,8 @@
 import jwt, { SignOptions } from "jsonwebtoken";
-import { randomBytes } from "crypto";
 import { config } from "../config";
 
 export const generateAccessToken = (userId: string) => {
-  const payload = { userId };
+  const payload = { sub: userId };
   const secret = config.jwt.secret;
   const options: SignOptions = {
     expiresIn: config.jwt.expiresIn,
@@ -12,6 +11,12 @@ export const generateAccessToken = (userId: string) => {
   return jwt.sign(payload, secret, options);
 };
 
-export const generateRefreshToken = () => {
-  return randomBytes(64).toString("hex");
+export const generateRefreshToken = (userId: string) => {
+  const payload = { sub: userId };
+  const secret = config.jwt.refreshSecret;
+  const options: SignOptions = {
+    expiresIn: config.jwt.refreshExpiresIn,
+  };
+
+  return jwt.sign(payload, secret, options);
 };
