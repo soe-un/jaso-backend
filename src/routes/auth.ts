@@ -2,6 +2,8 @@ import express, { Request, Response } from "express";
 import prisma from "../prisma";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { sendVerificationEmail } from "../utils/emailService";
+import { randomBytes } from "crypto";
 
 const router = express.Router();
 const SECRET_KEY = process.env.JWT_SECRET || "supersecret";
@@ -27,23 +29,31 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     // 비밀번호 해싱
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // 이메일 인증 토큰 생성
+    const verificationToken = randomBytes(32).toString("hex");
+
     // 사용자 생성
     const newUser = await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
         name: name,
+        isVerified: false,
       },
       select: {
         id: true,
         email: true,
         name: true,
-        profileImage: true,
+        isVerified: true,
         createdAt: true,
       },
     });
 
-    res.status(201).json({ message: "회원가입 성공!", user: newUser });
+    await sendVerificationEmail(email, verificationToken);
+
+    res
+      .status(201)
+      .json({ message: "회원가입 성공! 이메일을 확인하세요.", user: newUser });
     return;
   } catch (error) {
     console.error("회원가입 오류:", error);

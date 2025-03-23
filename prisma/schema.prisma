@@ -13,6 +13,7 @@ model User {
   password  String
   name      String?
   profileImage String?
+  isVerified  Boolean @default(false) 
   createdAt DateTime @default(now())
 
   posts Post[] @relation("UserPosts")
