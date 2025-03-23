@@ -14,6 +14,7 @@ model User {
   name      String?
   profileImage String?
   isVerified  Boolean @default(false) 
+  emailVerifyToken String?
   createdAt DateTime @default(now())
 
   posts Post[] @relation("UserPosts")

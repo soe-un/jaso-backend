@@ -39,6 +39,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
         password: hashedPassword,
         name: name,
         isVerified: false,
+        emailVerifyToken: verificationToken,
       },
       select: {
         id: true,
@@ -66,7 +67,7 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    // 1. 사용자가 DB에 존재하는지 확인
+    // 사용자가 DB에 존재하는지 확인
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       res
@@ -75,7 +76,7 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // 2. 비밀번호 비교
+    // 비밀번호 비교
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       res
@@ -84,15 +85,53 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // 3️. JWT 토큰 생성
+    // 이메일 인증 확인
+    if (!user.isVerified) {
+      res.status(403).json({ message: "이메일 인증이 완료되지 않았습니다." });
+      return;
+    }
+
+    // JWT 토큰 생성
     const token = jwt.sign({ userId: user.id }, SECRET_KEY, {
       expiresIn: "1h",
     });
 
-    // 4️. 로그인 성공 응답
+    // 로그인 성공 응답
     res.status(200).json({ message: "로그인 성공!", token, user });
   } catch (error) {
     console.error("로그인 오류:", error);
+    res.status(500).json({ message: "서버 오류 발생" });
+  }
+});
+
+// 이메일 인증 확인 API
+router.get("/verify-email/:token", async (req: Request, res: Response) => {
+  const { token } = req.params;
+
+  try {
+    const user = await prisma.user.findFirst({
+      where: { emailVerifyToken: token },
+    });
+
+    if (!user) {
+      res.status(400).json({ message: "유효하지 않은 인증 링크입니다." });
+      return;
+    }
+
+    // 이메일 인증 완료 처리
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        isVerified: true,
+        emailVerifyToken: null,
+      },
+    });
+
+    res
+      .status(200)
+      .json({ message: "이메일 인증이 완료되었습니다. 로그인하세요!" });
+  } catch (error) {
+    console.error("이메일 인증 오류:", error);
     res.status(500).json({ message: "서버 오류 발생" });
   }
 });
